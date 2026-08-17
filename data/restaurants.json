@@ -1,0 +1,14 @@
+[
+  { "id": "r001", "name": "老乡鸡", "category": "中式快餐", "price": 32, "distance": "步行 4 分钟", "emoji": "🍗", "color": "#FFD166", "enabled": true },
+  { "id": "r002", "name": "兰州牛肉面", "category": "面食", "price": 25, "distance": "步行 3 分钟", "emoji": "🍜", "color": "#70C1A2", "enabled": true },
+  { "id": "r003", "name": "川味小馆", "category": "川菜", "price": 38, "distance": "步行 7 分钟", "emoji": "🌶️", "color": "#FF6B35", "enabled": true },
+  { "id": "r004", "name": "粤味烧腊", "category": "粤菜", "price": 36, "distance": "步行 6 分钟", "emoji": "🍖", "color": "#F3A952", "enabled": true },
+  { "id": "r005", "name": "苏小柳点心", "category": "江浙菜", "price": 42, "distance": "步行 8 分钟", "emoji": "🥟", "color": "#F78DA7", "enabled": true },
+  { "id": "r006", "name": "拌将干拌麻辣烫", "category": "麻辣烫", "price": 30, "distance": "步行 5 分钟", "emoji": "🍲", "color": "#E76F51", "enabled": true },
+  { "id": "r007", "name": "和府捞面", "category": "中式面馆", "price": 48, "distance": "步行 9 分钟", "emoji": "🥢", "color": "#A7C957", "enabled": true },
+  { "id": "r008", "name": "萨莉亚", "category": "意式简餐", "price": 45, "distance": "步行 10 分钟", "emoji": "🍕", "color": "#7F9CF5", "enabled": true },
+  { "id": "r009", "name": "吉野家", "category": "日式盖饭", "price": 35, "distance": "步行 6 分钟", "emoji": "🍛", "color": "#FFB4A2", "enabled": true },
+  { "id": "r010", "name": "轻食研究所", "category": "沙拉轻食", "price": 39, "distance": "步行 5 分钟", "emoji": "🥗", "color": "#84CCB6", "enabled": true },
+  { "id": "r011", "name": "韩宫宴拌饭", "category": "韩式料理", "price": 43, "distance": "步行 8 分钟", "emoji": "🍱", "color": "#C4A7E7", "enabled": true },
+  { "id": "r012", "name": "小杨生煎", "category": "上海小吃", "price": 28, "distance": "步行 4 分钟", "emoji": "🥠", "color": "#F6BD60", "enabled": true }
+]
