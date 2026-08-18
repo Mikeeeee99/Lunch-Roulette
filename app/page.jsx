@@ -2,9 +2,23 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import restaurants from "../data/restaurants.json";
-import { buildCandidatePool, formatDateKey, getRecentRestaurantIds, pickRandomRestaurant } from "../lib/roulette.js";
+import { buildCandidatePool, formatDateKey, getRecentRestaurantIds, pickDifferentMessage, pickRandomRestaurant } from "../lib/roulette.js";
 
 const STORAGE_KEY = "lunch-roulette-history-v1";
+const RESULT_MESSAGES = [
+  "命运都把店名端上来了，再转就是对午休的不尊重。",
+  "都转到它了，就给这段缘分一个午饭的机会。",
+  "转盘已经拍板，你只负责带上胃准时出席。",
+  "别让命运开第二次会，这家就挺好。",
+  "它能从十二家里被选中，今天多少有点主角光环。",
+  "接受吧，再转一次可能只是把纠结重新加热。",
+  "胃已经举手通过，请不要申请重新表决。",
+  "宇宙费这么大劲指到它，不去吃多少有点不给面子。",
+  "就它了，果断是午休最省时间的调味料。",
+  "转盘选得很认真，给它一次证明眼光的机会。",
+  "这家不是偶然，是你和午餐之间的命中注定。",
+  "先吃了再说，重新选择的机会留给明天。",
+];
 
 function Brand() {
   return (
@@ -103,7 +117,15 @@ function SelectionPage({ history, manualExcluded, onToggle, onReset, onContinue 
   return (
     <main className="mx-auto w-full max-w-6xl px-5 pb-32 pt-6 sm:px-8">
       <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-        <div><p className="text-sm font-black text-[#ff6b35]">第一步</p><h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">今天有什么不想吃？</h1><p className="mt-3 text-[#647871]">点击餐厅卡片即可排除；不挑食的话，直接进入转盘。</p></div>
+        <div>
+          <p className="text-sm font-black text-[#ff6b35]">第一步</p>
+          <h1 className="mt-2 flex flex-wrap items-center gap-1 text-3xl font-black tracking-tight sm:text-4xl">
+            <span>今天有什么</span>
+            <span className="inline-block -rotate-1 rounded-xl bg-[#ffe2d7] px-2.5 py-1 text-[#d94d20] shadow-[inset_0_-3px_0_#ffb69b]">不想吃</span>
+            <span>？</span>
+          </h1>
+          <p className="mt-3 text-[#647871]">点击今天<strong className="mx-1 text-[#d94d20]">不想吃</strong>的餐厅卡片即可排除；不挑食的话，直接进入转盘。</p>
+        </div>
         <div className="flex gap-3">
           <div className="rounded-2xl bg-white px-4 py-3 text-center shadow-sm"><strong className="block text-xl text-[#ff6b35]">{recentIds.length}</strong><span className="text-[11px] font-bold text-[#80918b]">自动排除</span></div>
           <div className="rounded-2xl bg-white px-4 py-3 text-center shadow-sm"><strong className="block text-xl text-[#183d31]">{candidates.length}</strong><span className="text-[11px] font-bold text-[#80918b]">最终候选</span></div>
@@ -143,14 +165,14 @@ function RouletteWheel({ candidates, rotation, isSpinning }) {
   );
 }
 
-function ResultCard({ restaurant, confirmed, onConfirm, onReroll, onHome }) {
+function ResultCard({ restaurant, message, confirmed, onConfirm, onReroll, onHome }) {
   return (
     <div className="animate-result mx-auto mt-7 max-w-xl rounded-[2rem] border border-[#183d31]/10 bg-white p-5 text-center shadow-[0_18px_50px_rgba(24,61,49,.12)] sm:p-7">
       <p className={`text-sm font-black ${confirmed ? "text-[#3d8b70]" : "text-[#ff6b35]"}`}>{confirmed ? "✓ 今天的午餐已保存" : "🎉 转盘替你决定了"}</p>
       <div className="mx-auto mt-4 grid size-20 place-items-center rounded-3xl text-5xl" style={{ backgroundColor: `${restaurant.color}30` }}>{restaurant.emoji}</div>
       <h2 className="mt-4 text-3xl font-black tracking-tight">{restaurant.name}</h2>
       <p className="mt-2 text-sm font-semibold text-[#71847d]">{restaurant.category} · ¥{restaurant.price}/人 · {restaurant.distance}</p>
-      <p className="mx-auto mt-4 max-w-md rounded-2xl bg-[#f7f5ef] px-4 py-3 text-sm leading-6 text-[#5f736c]">{confirmed ? "决定好了就出发吧，祝你午餐愉快！" : "这一刻别再纠结了——随机，也是认真生活的一种方式。"}</p>
+      <p className="mx-auto mt-4 max-w-md rounded-2xl bg-[#f7f5ef] px-4 py-3 text-sm leading-6 text-[#5f736c]">{confirmed ? "决定好了就出发吧，祝你午餐愉快！" : message}</p>
       <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
         {confirmed ? <button type="button" onClick={onHome} className="rounded-2xl bg-[#183d31] px-7 py-3.5 font-black text-white">返回首页</button> : <><button type="button" onClick={onReroll} className="rounded-2xl border-2 border-[#183d31]/15 px-6 py-3.5 font-black text-[#526a62]">换一家</button><button type="button" onClick={onConfirm} className="rounded-2xl bg-[#ff6b35] px-7 py-3.5 font-black text-white shadow-[0_5px_0_#c73f16] active:translate-y-1 active:shadow-none">就吃这家！</button></>}
       </div>
@@ -165,6 +187,7 @@ function WheelPage({ candidates, onBack, onSave, onHome }) {
   const [selected, setSelected] = useState(null);
   const [confirmed, setConfirmed] = useState(false);
   const [notice, setNotice] = useState("");
+  const [resultMessage, setResultMessage] = useState("");
   const timerRef = useRef(null);
   const available = useMemo(() => candidates.filter((restaurant) => !rerollExcluded.includes(restaurant.id)), [candidates, rerollExcluded]);
   useEffect(() => () => window.clearTimeout(timerRef.current), []);
@@ -177,7 +200,9 @@ function WheelPage({ candidates, onBack, onSave, onHome }) {
     const slice = 360 / spinPool.length;
     const targetOffset = (360 - (winnerIndex * slice + slice / 2)) % 360;
     const nextRotation = Math.ceil(rotation / 360) * 360 + 5 * 360 + targetOffset;
+    const nextMessage = pickDifferentMessage(RESULT_MESSAGES, resultMessage);
     setSelected(null); setConfirmed(false); setNotice(""); setIsSpinning(true);
+    setResultMessage(nextMessage);
     requestAnimationFrame(() => setRotation(nextRotation));
     timerRef.current = window.setTimeout(() => { setSelected(winner); setIsSpinning(false); }, 4300);
   }
@@ -200,7 +225,7 @@ function WheelPage({ candidates, onBack, onSave, onHome }) {
         <RouletteWheel candidates={available} rotation={rotation} isSpinning={isSpinning} />
         <aside className="lg:sticky lg:top-6"><div className="rounded-[2rem] bg-white p-6 shadow-[0_15px_45px_rgba(24,61,49,.08)]"><span className="inline-flex rounded-full bg-[#ffe2d7] px-3 py-1 text-xs font-black text-[#b43f18]">准备好了</span><h1 className="mt-4 text-3xl font-black tracking-tight">命运转盘</h1><p className="mt-3 text-sm leading-6 text-[#667a73]">每家餐厅机会均等。点击按钮后，结果将在动画开始前随机确定。</p><div className="mt-5 flex flex-wrap gap-2">{available.map((item) => <span key={item.id} className="rounded-full bg-[#f4f3ef] px-3 py-1.5 text-xs font-bold text-[#5f736c]">{item.emoji} {item.name}</span>)}</div>{notice && <p className="mt-4 rounded-xl bg-[#fff4d6] p-3 text-xs font-bold text-[#8d6a12]">{notice}</p>}<button type="button" onClick={() => spin()} disabled={isSpinning || selected !== null} className="mt-6 w-full rounded-2xl bg-[#183d31] px-6 py-4 font-black text-white shadow-[0_6px_0_#0c251e] transition active:translate-y-1 active:shadow-none disabled:cursor-not-allowed disabled:opacity-45">{isSpinning ? "转盘正在旋转…" : selected ? "本轮已完成" : "开始转动"}</button></div></aside>
       </div>
-      {selected && <ResultCard restaurant={selected} confirmed={confirmed} onConfirm={confirm} onReroll={reroll} onHome={onHome} />}
+      {selected && <ResultCard restaurant={selected} message={resultMessage} confirmed={confirmed} onConfirm={confirm} onReroll={reroll} onHome={onHome} />}
     </main>
   );
 }

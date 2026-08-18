@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCandidatePool, formatDateKey, getRecentRestaurantIds, pickRandomRestaurant } from "../lib/roulette.js";
+import { buildCandidatePool, formatDateKey, getRecentRestaurantIds, pickDifferentMessage, pickRandomRestaurant } from "../lib/roulette.js";
 
 const restaurants = [
   { id: "a", enabled: true },
@@ -31,4 +31,11 @@ test("random selection stays inside the candidate pool", () => {
   assert.equal(pickRandomRestaurant(restaurants.slice(0, 3), () => 0).id, "a");
   assert.equal(pickRandomRestaurant(restaurants.slice(0, 3), () => 0.999).id, "c");
   assert.equal(pickRandomRestaurant([], () => 0.5), null);
+});
+
+test("result message does not immediately repeat when alternatives exist", () => {
+  const messages = ["第一条", "第二条", "第三条"];
+  assert.notEqual(pickDifferentMessage(messages, "第一条", () => 0), "第一条");
+  assert.equal(pickDifferentMessage(["唯一一条"], "唯一一条", () => 0.5), "唯一一条");
+  assert.equal(pickDifferentMessage([], "", () => 0.5), "");
 });
