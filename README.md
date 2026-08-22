@@ -14,7 +14,8 @@
 - 发现页地图默认折叠，需要时再展开
 - 最近两个有记录的午餐日自动排除
 - 手动排除今天不想吃的餐厅
-- 最多 30 家等概率进入转盘，不足时全部进入，密集转盘直接显示餐厅简称
+- 最多 30 家等概率进入转盘，不足时全部进入；密集转盘和右侧清单使用一致的餐厅简称，完整名称保留为悬停提示
+- 候选清单随餐厅数量完整展开，不使用内部滚动条；桌面端大转盘在长清单滚动时保持可见
 - 每次转动完成后弹出结果、地图高亮、“换一家”和最终确认
 - 使用浏览器 localStorage 保存午餐历史
 
@@ -50,6 +51,24 @@ AMAP_WEB_SERVICE_KEY
 - `AMAP_JS_SECURITY_CODE` 和 `AMAP_WEB_SERVICE_KEY` 是敏感值，部署时必须在 Cloudflare 中设置为 Secret。
 - 不要把真实凭证写入源码、README、`.env.example` 或 Git。
 - 当前设计用于非商业测试，并依赖高德账号包含的免费额度；额度及授权要求以高德控制台为准。
+
+### Cloudflare 运行时配置
+
+项目在 API 请求期间通过 Worker 运行时读取三项变量。部署时进入：
+
+```text
+Workers & Pages → lunch-roulette → Settings → Runtime variables and secrets
+```
+
+配置类型：
+
+```text
+NEXT_PUBLIC_AMAP_JS_KEY  Text
+AMAP_JS_SECURITY_CODE    Secret
+AMAP_WEB_SERVICE_KEY     Secret
+```
+
+不要只填写 Build 区域的 `Variables and secrets`；构建变量不会提供给运行中的 Worker。添加或修改运行时变量后必须点击 `Deploy`，并在 `Deployments` 中确认包含新配置的版本承接 100% 流量。
 
 ## 本地运行
 
