@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCandidatePool, formatDateKey, getRecentRestaurantIds, getWheelLabel, pickDifferentMessage, pickRandomRestaurant, sampleCandidates } from "../lib/roulette.js";
+import { buildCandidatePool, formatDateKey, getRecentRestaurantIds, getWheelLabel, getWheelLabelLayout, getWheelSectorColors, pickDifferentMessage, pickRandomRestaurant, sampleCandidates } from "../lib/roulette.js";
 
 const restaurants = [
   { id: "a", enabled: true },
@@ -50,4 +50,27 @@ test("builds recognizable short labels for dense wheel sectors", () => {
   assert.equal(getWheelLabel("晨曦炖品·鲍鱼饭(漕宝路店)", 5), "晨曦炖品");
   assert.equal(getWheelLabel("百热客兰州牛肉面(东泉路店)", 5), "百热牛肉面");
   assert.equal(getWheelLabel("", 5), "餐厅");
+});
+
+test("assigns distinct colors to neighboring wheel sectors including the seam", () => {
+  for (const count of [2, 8, 20, 30]) {
+    const colors = getWheelSectorColors(count);
+    assert.equal(colors.length, count);
+    assert.equal(new Set(colors).size, count);
+    colors.forEach((color, index) => {
+      assert.notEqual(color, colors[(index + 1) % colors.length]);
+    });
+  }
+});
+
+test("keeps wheel sector colors deterministic", () => {
+  assert.deepEqual(getWheelSectorColors(12), getWheelSectorColors(12));
+  assert.deepEqual(getWheelSectorColors(0), []);
+});
+
+test("aligns wheel labels with their sector and keeps text readable", () => {
+  assert.deepEqual(getWheelLabelLayout(0, 4), { angle: 45, flipped: true, labelRotation: 270 });
+  assert.deepEqual(getWheelLabelLayout(1, 4), { angle: 135, flipped: true, labelRotation: 270 });
+  assert.deepEqual(getWheelLabelLayout(2, 4), { angle: 225, flipped: false, labelRotation: 90 });
+  assert.deepEqual(getWheelLabelLayout(3, 4), { angle: 315, flipped: false, labelRotation: 90 });
 });

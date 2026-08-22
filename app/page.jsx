@@ -1,8 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import NearbyMap from "../components/NearbyMap.jsx";
 import { resolveBrowserLocation } from "../lib/amap-client.js";
+import {
+  canReuseBrowserLocation,
+  createLocationError,
+  createLocationRequestTracker,
+  getLocationErrorMessage,
+  requestBrowserPosition,
+} from "../lib/geolocation.js";
 import {
   BUDGET_OPTIONS,
   DISTANCE_OPTIONS,
@@ -17,6 +24,8 @@ import {
   formatDateKey,
   getRecentRestaurantIds,
   getWheelLabel,
+  getWheelLabelLayout,
+  getWheelSectorColors,
   pickDifferentMessage,
   pickRandomRestaurant,
   sampleCandidates,
@@ -87,24 +96,8 @@ function HomePage({ history, onStart, onClearHistory }) {
   );
 }
 
-function getBrowserPosition() {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) { const error = new Error("当前浏览器不支持定位，暂时无法寻找附近餐厅。"); error.code = "UNSUPPORTED"; reject(error); return; }
-    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
-  });
-}
-
-function locationErrorMessage(error) {
-  if (error?.code === 1) return "定位权限被拒绝。请在浏览器地址栏中允许位置权限后重试。";
-  if (error?.code === 2) return "暂时无法获取位置，请确认设备定位已开启。";
-  if (error?.code === 3) return "定位超时，请移动到信号更好的位置后重试。";
-  return error?.message || "定位失败，请稍后重试。";
-}
-
-function DiscoverPage({ location, onLocationChange, searchResults, onSearchResultsChange, distanceMinutes, onDistanceChange, budget, onBudgetChange, searchCache, onContinue }) {
+function DiscoverPage({ location, locationStatus, locationError, locationErrorCode, locationRevision, onLocate, searchResults, onSearchResultsChange, distanceMinutes, onDistanceChange, budget, onBudgetChange, searchCache, onContinue }) {
   const radius = radiusForMinutes(distanceMinutes);
-  const [locationStatus, setLocationStatus] = useState(location ? "ready" : "idle");
-  const [locationError, setLocationError] = useState("");
   const [searchStatus, setSearchStatus] = useState(searchResults.length ? "ready" : "idle");
   const [searchError, setSearchError] = useState("");
   const [retryToken, setRetryToken] = useState(0);
@@ -113,21 +106,8 @@ function DiscoverPage({ location, onLocationChange, searchResults, onSearchResul
   const lunchRestaurants = useMemo(() => searchResults.filter(isLunchRestaurantPoi), [searchResults]);
   const filteredRestaurants = useMemo(() => filterByBudget(lunchRestaurants, budget), [lunchRestaurants, budget]);
 
-  const locate = useCallback(async () => {
-    setLocationStatus("loading"); setLocationError(""); setSearchError("");
-    try {
-      const browserPosition = await getBrowserPosition();
-      const resolved = await resolveBrowserLocation(browserPosition.coords.longitude, browserPosition.coords.latitude);
-      onLocationChange(resolved);
-      onSearchResultsChange([]);
-      if (!resolved.supported) { setLocationStatus("unsupported"); setLocationError("V2 暂仅支持上海地区，当前位置还不能搜索餐厅。"); } else setLocationStatus("ready");
-    } catch (error) { setLocationStatus("error"); setLocationError(locationErrorMessage(error)); }
-  }, [onLocationChange, onSearchResultsChange]);
-
-  useEffect(() => { if (!location && locationStatus === "idle") void locate(); }, [locate, location, locationStatus]);
-
   useEffect(() => {
-    if (!location?.supported || !radius) return undefined;
+    if (locationStatus !== "ready" || !location?.supported || !radius) return undefined;
     const requestId = activeRequestRef.current + 1;
     activeRequestRef.current = requestId;
     const controller = new AbortController();
@@ -163,11 +143,17 @@ function DiscoverPage({ location, onLocationChange, searchResults, onSearchResul
     });
 
     return () => controller.abort();
-  }, [location?.latitude, location?.longitude, location?.supported, onSearchResultsChange, radius, retryToken, searchCache]);
+  }, [location?.latitude, location?.longitude, location?.supported, locationRevision, locationStatus, onSearchResultsChange, radius, retryToken, searchCache]);
 
-  const locationLabel = location ? [location.supported ? "上海" : location.province || location.city || "当前位置", location.district, location.road && `${location.road}附近`].filter(Boolean).join(" · ") : "正在确认你的位置";
-  const canContinue = searchStatus === "ready" && filteredRestaurants.length > 0;
-  const primaryDisabled = !location?.supported || locationStatus === "loading" || searchStatus === "idle" || searchStatus === "loading" || (searchStatus === "ready" && filteredRestaurants.length === 0);
+  const locationLabel = locationStatus === "loading"
+    ? "正在请求定位权限…"
+    : locationStatus === "error" || locationStatus === "unsupported"
+      ? "暂时无法确认当前位置"
+      : location
+        ? [location.supported ? "上海" : location.province || location.city || "当前位置", location.district, location.road && `${location.road}附近`].filter(Boolean).join(" · ")
+        : "等待获取你的位置";
+  const canContinue = locationStatus === "ready" && searchStatus === "ready" && filteredRestaurants.length > 0;
+  const primaryDisabled = locationStatus !== "ready" || !location?.supported || searchStatus === "idle" || searchStatus === "loading" || (searchStatus === "ready" && filteredRestaurants.length === 0);
   const primaryLabel = searchStatus === "loading"
     ? "正在搜索附近午餐…"
     : searchStatus === "error"
@@ -186,14 +172,14 @@ function DiscoverPage({ location, onLocationChange, searchResults, onSearchResul
     <main className="mx-auto w-full max-w-3xl px-5 pb-20 pt-4 sm:px-8">
       <section>
         <p className="text-sm font-black text-[#ff6b35]">第一步 · 发现附近</p><h1 className="mt-2 text-4xl font-black tracking-tight sm:text-5xl">午休能走多远？</h1><p className="mt-4 max-w-2xl leading-7 text-[#647871]">选好步行范围和人均预算，再去看看附近有哪些午餐值得进入转盘。</p>
-        <div className="mt-7 rounded-[1.75rem] bg-white p-5 shadow-[0_12px_35px_rgba(24,61,49,.08)]"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-[.14em] text-[#8a9994]">当前位置</p><p className="mt-2 font-black">{locationStatus === "loading" ? "正在定位…" : locationLabel}</p>{location?.formattedAddress && <p className="mt-1 text-xs leading-5 text-[#71847d]">{location.formattedAddress}</p>}</div><span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#ffe2d7] text-xl">📍</span></div>{locationError && <p className="mt-4 rounded-xl bg-[#fff0ea] p-3 text-sm font-bold leading-6 text-[#a54525]">{locationError}</p>}<button type="button" onClick={locate} disabled={locationStatus === "loading"} className="mt-4 text-sm font-black text-[#416f60] underline decoration-dotted underline-offset-4 disabled:opacity-40">{locationStatus === "loading" ? "正在获取位置" : "重新定位"}</button></div>
+        <div className="mt-7 rounded-[1.75rem] bg-white p-5 shadow-[0_12px_35px_rgba(24,61,49,.08)]"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-[.14em] text-[#8a9994]">当前位置</p><p className="mt-2 font-black">{locationLabel}</p>{locationStatus === "ready" && location?.formattedAddress && <p className="mt-1 text-xs leading-5 text-[#71847d]">{location.formattedAddress}</p>}</div><span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#ffe2d7] text-xl">📍</span></div>{locationError && <p className="mt-4 rounded-xl bg-[#fff0ea] p-3 text-sm font-bold leading-6 text-[#a54525]">{locationError}</p>}<button type="button" onClick={onLocate} disabled={locationStatus === "loading"} className="mt-4 text-sm font-black text-[#416f60] underline decoration-dotted underline-offset-4 disabled:opacity-40">{locationStatus === "loading" ? "正在获取位置" : locationErrorCode === "denied" ? "我已开启权限，重新定位" : location ? "重新定位" : "允许定位"}</button></div>
         <div className="mt-6"><p className="text-sm font-black">步行范围</p><div className="mt-3 grid grid-cols-3 gap-2">{DISTANCE_OPTIONS.map((option) => <button key={option.minutes} type="button" onClick={() => onDistanceChange(option.minutes)} aria-pressed={distanceMinutes === option.minutes} className={`rounded-2xl border-2 px-3 py-3 text-sm font-black transition ${distanceMinutes === option.minutes ? "border-[#183d31] bg-[#183d31] text-white" : "border-[#183d31]/10 bg-white text-[#526a62]"}`}>{option.minutes} 分钟</button>)}</div><p className="mt-2 text-xs leading-5 text-[#84938e]">按直线距离估算，不代表实际路线耗时；15 分钟是工作日午餐上限。</p></div>
         <div className="mt-6"><p className="text-sm font-black">人均预算</p><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">{BUDGET_OPTIONS.map((option) => <button key={option ?? "unlimited"} type="button" onClick={() => onBudgetChange(option)} aria-pressed={budget === option} className={`rounded-2xl border-2 px-3 py-3 text-sm font-black transition ${budget === option ? "border-[#ff6b35] bg-[#ffe2d7] text-[#ad3e1b]" : "border-[#183d31]/10 bg-white text-[#526a62]"}`}>{option === null ? "不限预算" : `¥${option} 内`}</button>)}</div><p className="mt-2 text-xs leading-5 text-[#84938e]">有限预算会排除高德未提供人均消费的餐厅；不限预算时会保留。</p></div>
-        <button type="button" onClick={() => setMapExpanded((current) => !current)} disabled={!location?.supported} aria-expanded={mapExpanded} aria-controls="nearby-map-panel" className="mt-7 flex w-full items-center justify-between rounded-2xl border border-[#183d31]/10 bg-white px-5 py-3 text-left text-sm font-black text-[#41695c] shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-45"><span>🗺️ 附近地图</span><span>{mapExpanded ? "收起地图 ↑" : location?.supported ? "查看地图 ↓" : "定位后可查看"}</span></button>
-        {mapExpanded && <div id="nearby-map-panel" className="mt-4"><NearbyMap center={location?.supported ? location : null} radius={radius} restaurants={filteredRestaurants} /></div>}
-        {searchError && <p className="mt-5 rounded-xl bg-[#fff0ea] p-3 text-sm font-bold leading-6 text-[#a54525]">{searchError}</p>}
-        {searchStatus === "ready" && lunchRestaurants.length > 0 && filteredRestaurants.length === 0 && <p className="mt-5 rounded-xl bg-[#fff4d6] p-3 text-sm font-bold leading-6 text-[#8d6a12]">当前预算下没有可选餐厅，可以提高预算或选择不限预算。</p>}
-        {searchStatus === "ready" && lunchRestaurants.length === 0 && <p className="mt-5 rounded-xl bg-[#f1f2ed] p-3 text-sm font-bold leading-6 text-[#71847d]">当前范围内没有找到适合午餐的餐厅，可以扩大步行范围。</p>}
+        <button type="button" onClick={() => setMapExpanded((current) => !current)} disabled={locationStatus !== "ready" || !location?.supported} aria-expanded={mapExpanded && locationStatus === "ready"} aria-controls="nearby-map-panel" className="mt-7 flex w-full items-center justify-between rounded-2xl border border-[#183d31]/10 bg-white px-5 py-3 text-left text-sm font-black text-[#41695c] shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-45"><span>🗺️ 附近地图</span><span>{mapExpanded && locationStatus === "ready" ? "收起地图 ↑" : locationStatus === "ready" && location?.supported ? "查看地图 ↓" : "定位后可查看"}</span></button>
+        {mapExpanded && locationStatus === "ready" && <div id="nearby-map-panel" className="mt-4"><NearbyMap center={location?.supported ? location : null} radius={radius} restaurants={filteredRestaurants} /></div>}
+        {locationStatus === "ready" && searchError && <p className="mt-5 rounded-xl bg-[#fff0ea] p-3 text-sm font-bold leading-6 text-[#a54525]">{searchError}</p>}
+        {locationStatus === "ready" && searchStatus === "ready" && lunchRestaurants.length > 0 && filteredRestaurants.length === 0 && <p className="mt-5 rounded-xl bg-[#fff4d6] p-3 text-sm font-bold leading-6 text-[#8d6a12]">当前预算下没有可选餐厅，可以提高预算或选择不限预算。</p>}
+        {locationStatus === "ready" && searchStatus === "ready" && lunchRestaurants.length === 0 && <p className="mt-5 rounded-xl bg-[#f1f2ed] p-3 text-sm font-bold leading-6 text-[#71847d]">当前范围内没有找到适合午餐的餐厅，可以扩大步行范围。</p>}
         <button type="button" onClick={handlePrimaryAction} disabled={primaryDisabled} className="mt-6 w-full rounded-2xl bg-[#ff6b35] px-6 py-4 font-black text-white shadow-[0_5px_0_#c73f16] transition active:translate-y-1 active:shadow-none disabled:cursor-not-allowed disabled:bg-[#9ca9a4] disabled:shadow-none">{primaryLabel}</button>
         <p className="mt-4 text-center text-[11px] text-[#96a29e]">餐厅与消费数据来自高德地图 · 当前仅用于非商业测试</p>
       </section>
@@ -228,15 +214,22 @@ function SelectionPage({ restaurants, history, manualExcluded, onToggle, onReset
   );
 }
 
-function RouletteWheel({ candidates, rotation, isSpinning }) {
+function RouletteWheel({ candidates, rotation, isSpinning, selected, onSpin }) {
   const slice = 360 / Math.max(candidates.length, 1);
-  const background = candidates.length ? `conic-gradient(${candidates.map((restaurant, index) => `${restaurant.color} ${index * slice}deg ${(index + 1) * slice}deg`).join(",")})` : "#d8ddd9";
+  const sectorColors = getWheelSectorColors(candidates.length);
+  const background = candidates.length ? `conic-gradient(${candidates.map((restaurant, index) => `${sectorColors[index]} ${index * slice}deg ${(index + 1) * slice}deg`).join(",")})` : "#d8ddd9";
   const dense = candidates.length > 20; const medium = candidates.length > 12;
+  const wheelSize = "min(900px, calc(100vw - 2.5rem), calc(100dvh - 11rem))";
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[620px] lg:sticky lg:top-6"><div className="absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-2 text-5xl text-[#183d31] drop-shadow-md">▼</div><div className="absolute inset-0 rounded-full bg-[#183d31] p-3 shadow-[0_25px_70px_rgba(24,61,49,.25)] sm:p-4"><div className="relative size-full overflow-hidden rounded-full border-[9px] border-[#fffaf1] sm:border-[13px]" style={{ background, transform: `rotate(${rotation}deg)`, transition: isSpinning ? "transform 4.2s cubic-bezier(.12,.68,.12,1)" : "none" }}>
-      {candidates.map((restaurant, index) => { const angle = index * slice + slice / 2; const label = getWheelLabel(restaurant.name, dense ? 5 : medium ? 6 : 10); return <div key={restaurant.id} className={`absolute left-1/2 top-1/2 z-10 text-center font-black text-[#183d31] drop-shadow-[0_1px_0_rgba(255,255,255,.65)] ${dense ? "text-[8px] leading-[1.15] sm:text-[10px]" : medium ? "text-[9px] sm:text-[11px]" : "text-[11px] sm:text-sm"}`} style={{ transform: `translate(-50%, -50%) rotate(${angle}deg) translateY(clamp(-205px, -34vw, -92px)) rotate(${-angle}deg)`, width: dense ? "22px" : medium ? "58px" : "100px", height: dense ? "62px" : "auto", writingMode: dense ? "vertical-rl" : "horizontal-tb", textOrientation: dense ? "upright" : "mixed" }}>{!dense && <span className={`block ${medium ? "text-sm sm:text-base" : "text-xl sm:text-2xl"}`}>{restaurant.emoji}</span>}<span className={dense ? "inline-block rounded-lg bg-white/65 px-1 py-1" : "line-clamp-2"}>{label}</span></div>; })}
-      <div className="absolute left-1/2 top-1/2 grid size-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-[7px] border-[#fffaf1] bg-[#183d31] text-xs font-black text-white shadow-xl sm:size-28 sm:border-8 sm:text-sm">{isSpinning ? "转动中…" : candidates.length === 1 ? "命运锁定" : "午餐转盘"}</div>
-    </div></div></div>
+    <div className="relative mx-auto aspect-square" style={{ width: wheelSize }}>
+      <div className="absolute left-1/2 top-0 z-40 -translate-x-1/2 -translate-y-2 text-5xl text-[#183d31] drop-shadow-md">▼</div>
+      <div className="absolute inset-0 rounded-full bg-[#183d31] p-3 shadow-[0_25px_70px_rgba(24,61,49,.25)] sm:p-4">
+        <div className="relative size-full overflow-hidden rounded-full border-[9px] border-[#fffaf1] sm:border-[13px]" style={{ background, transform: `rotate(${rotation}deg)`, transition: isSpinning ? "transform 4.2s cubic-bezier(.12,.68,.12,1)" : "none" }}>
+          {candidates.map((restaurant, index) => { const { angle, labelRotation } = getWheelLabelLayout(index, candidates.length); const label = getWheelLabel(restaurant.name, dense ? 5 : medium ? 6 : 10); return <div key={restaurant.id} className="absolute left-1/2 top-1/2 z-10 h-1/2 w-px origin-top" style={{ transform: `rotate(${angle}deg)` }}><span title={restaurant.name} aria-label={restaurant.name} className={`absolute inline-flex max-w-[150px] items-center justify-center gap-1 whitespace-nowrap rounded-lg bg-white/75 px-1.5 py-1 text-center font-black leading-none text-[#183d31] shadow-[0_1px_3px_rgba(24,61,49,.16)] ${dense ? "text-[8px] sm:text-[10px]" : medium ? "text-[9px] sm:text-[11px]" : "text-[11px] sm:text-sm"}`} style={{ left: "50%", top: "-70%", transform: `translate(-50%, -50%) rotate(${labelRotation}deg)` }}>{!dense && <span className={medium ? "text-sm sm:text-base" : "text-lg sm:text-xl"}>{restaurant.emoji}</span>}<span>{label}</span></span></div>; })}
+        </div>
+      </div>
+      <button type="button" onClick={onSpin} disabled={isSpinning || selected !== null} aria-label={isSpinning ? "转盘正在转动" : "开始转动午餐转盘"} className="absolute left-1/2 top-1/2 z-30 grid -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-[7px] border-[#fffaf1] bg-[#183d31] px-3 text-center text-xs font-black leading-5 text-white shadow-xl transition hover:scale-105 focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-[#ff6b35] active:scale-95 disabled:cursor-not-allowed disabled:hover:scale-100 sm:border-8 sm:text-base" style={{ width: "clamp(5rem, 14vw, 8rem)", height: "clamp(5rem, 14vw, 8rem)" }}>{isSpinning ? "转动中…" : selected ? "本轮已完成" : "开始转动"}</button>
+    </div>
   );
 }
 
@@ -294,23 +287,50 @@ function WheelPage({ candidates, location, onBack, onSave, onHome }) {
   return (
     <main className="mx-auto w-full max-w-7xl px-5 pb-20 pt-4 sm:px-8">
       <div className="mb-6 flex items-center justify-between gap-4"><button type="button" onClick={onBack} disabled={isSpinning} className="rounded-xl px-2 py-2 text-sm font-black text-[#60746d] disabled:opacity-30">← 修改餐厅</button><div className="text-right"><p className="text-sm font-black text-[#ff6b35]">第三步 · 命运决定</p><p className="text-xs font-bold text-[#81918b]">{available.length} 家候选餐厅</p></div></div>
-      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_460px] lg:gap-12"><RouletteWheel candidates={available} rotation={rotation} isSpinning={isSpinning} /><aside><div className="rounded-[2rem] bg-white p-6 shadow-[0_15px_45px_rgba(24,61,49,.08)] sm:p-7"><span className="inline-flex rounded-full bg-[#ffe2d7] px-3 py-1 text-xs font-black text-[#b43f18]">准备好了</span><h1 className="mt-4 text-3xl font-black tracking-tight">命运转盘</h1><p className="mt-3 text-sm leading-6 text-[#667a73]">每家餐厅机会均等。结果会在动画开始前确定，指针会准确停到对应扇区。</p><div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">{available.map((item) => <span key={item.id} title={item.name} aria-label={item.name} className="min-w-0 rounded-2xl bg-[#f4f3ef] px-3 py-2 text-xs font-bold leading-5 text-[#5f736c] break-words">{item.emoji} {getWheelLabel(item.name, wheelLabelLength)}</span>)}</div>{notice && <p className="mt-4 rounded-xl bg-[#fff4d6] p-3 text-xs font-bold text-[#8d6a12]">{notice}</p>}<button type="button" onClick={() => spin()} disabled={isSpinning || selected !== null} className="mt-6 w-full rounded-2xl bg-[#183d31] px-6 py-4 font-black text-white shadow-[0_6px_0_#0c251e] transition active:translate-y-1 active:shadow-none disabled:cursor-not-allowed disabled:opacity-45">{isSpinning ? "转盘正在旋转…" : selected ? "本轮已完成" : candidates.length === 1 ? "让命运正式宣布" : "开始转动"}</button></div></aside></div>
+      <RouletteWheel candidates={available} rotation={rotation} isSpinning={isSpinning} selected={selected} onSpin={() => spin()} />
+      <aside className="mx-auto mt-10 w-full max-w-5xl"><div className="rounded-[2rem] bg-white p-6 shadow-[0_15px_45px_rgba(24,61,49,.08)] sm:p-8"><span className="inline-flex rounded-full bg-[#ffe2d7] px-3 py-1 text-xs font-black text-[#b43f18]">准备好了</span><div className="mt-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h1 className="text-3xl font-black tracking-tight">命运转盘</h1><p className="mt-3 text-sm leading-6 text-[#667a73]">每家餐厅机会均等。点击转盘中心开始，指针会准确停到结果扇区。</p></div><p className="shrink-0 text-sm font-black text-[#ff6b35]">{available.length} 家候选</p></div><div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">{available.map((item) => <span key={item.id} title={item.name} aria-label={item.name} className="min-w-0 rounded-2xl bg-[#f4f3ef] px-3 py-2 text-xs font-bold leading-5 text-[#5f736c] break-words">{item.emoji} {getWheelLabel(item.name, wheelLabelLength)}</span>)}</div>{notice && <p className="mt-5 rounded-xl bg-[#fff4d6] p-3 text-xs font-bold text-[#8d6a12]">{notice}</p>}</div></aside>
       {selected && <ResultModal restaurant={selected} message={resultMessage} confirmed={confirmed} onConfirm={confirm} onReroll={reroll} onHome={onHome} location={location} candidates={candidates} />}
     </main>
   );
 }
 
 export default function Home() {
-  const [step, setStep] = useState("home"); const [history, setHistory] = useState([]); const [storageReady, setStorageReady] = useState(false); const [location, setLocation] = useState(null); const [searchResults, setSearchResults] = useState([]); const [selectionRestaurants, setSelectionRestaurants] = useState([]); const [distanceMinutes, setDistanceMinutes] = useState(10); const [budget, setBudget] = useState(40); const [manualExcluded, setManualExcluded] = useState([]); const [wheelCandidates, setWheelCandidates] = useState([]); const searchCache = useRef(new Map());
+  const [step, setStep] = useState("home"); const [history, setHistory] = useState([]); const [storageReady, setStorageReady] = useState(false); const [location, setLocation] = useState(null); const [locationStatus, setLocationStatus] = useState("idle"); const [locationError, setLocationError] = useState(""); const [locationErrorCode, setLocationErrorCode] = useState(""); const [locationRevision, setLocationRevision] = useState(0); const [searchResults, setSearchResults] = useState([]); const [selectionRestaurants, setSelectionRestaurants] = useState([]); const [distanceMinutes, setDistanceMinutes] = useState(10); const [budget, setBudget] = useState(40); const [manualExcluded, setManualExcluded] = useState([]); const [wheelCandidates, setWheelCandidates] = useState([]); const searchCache = useRef(new Map()); const locationRequestRef = useRef(createLocationRequestTracker());
   useEffect(() => { try { const saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "[]"); setHistory(Array.isArray(saved) ? saved : []); } catch { setHistory([]); } finally { setStorageReady(true); } }, []);
-  function goHome() { setStep("home"); setManualExcluded([]); setWheelCandidates([]); }
-  function start() { setManualExcluded([]); setWheelCandidates([]); setStep("discover"); }
+  function goHome() { locationRequestRef.current.invalidate(); if (locationStatus === "loading") { setLocationStatus(canReuseBrowserLocation(location, "ready") ? "ready" : "idle"); setLocationError(""); setLocationErrorCode(""); } setStep("home"); setManualExcluded([]); setWheelCandidates([]); }
+  async function locate() {
+    const requestId = locationRequestRef.current.begin();
+    if (requestId === null) return;
+    setLocationStatus("loading"); setLocationError(""); setLocationErrorCode(""); setSearchResults([]);
+    try {
+      const browserPosition = await requestBrowserPosition();
+      let resolved;
+      try {
+        resolved = await resolveBrowserLocation(browserPosition.coords.longitude, browserPosition.coords.latitude);
+      } catch (error) {
+        throw createLocationError("resolve-failed", error);
+      }
+      if (!locationRequestRef.current.isCurrent(requestId)) return;
+      setLocation(resolved); setLocationRevision((current) => current + 1);
+      if (resolved.supported) {
+        setLocationStatus("ready");
+      } else {
+        setLocationStatus("unsupported"); setLocationErrorCode("outside-shanghai"); setLocationError("V2 暂仅支持上海地区，当前位置还不能搜索餐厅。");
+      }
+    } catch (error) {
+      if (!locationRequestRef.current.isCurrent(requestId)) return;
+      setLocationStatus(error?.code === "unsupported" ? "unsupported" : "error"); setLocationErrorCode(error?.code || "unknown"); setLocationError(getLocationErrorMessage(error));
+    } finally {
+      locationRequestRef.current.finish(requestId);
+    }
+  }
+  function start() { setManualExcluded([]); setWheelCandidates([]); if (!canReuseBrowserLocation(location, locationStatus)) void locate(); setStep("discover"); }
   function continueToSelection(restaurants) { setSelectionRestaurants(restaurants); setManualExcluded([]); setWheelCandidates([]); setStep("select"); }
   function toggleRestaurant(id) { setManualExcluded((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]); }
   function continueToWheel(candidates) { setWheelCandidates(sampleCandidates(candidates, 30)); setStep("wheel"); }
   function saveLunch(restaurant) { const today = formatDateKey(); const record = { id: `${today}-${restaurant.id}`, date: today, restaurantId: restaurant.id, restaurantName: restaurant.name, category: restaurant.category, emoji: restaurant.emoji, cost: restaurant.cost, distance: restaurant.distance, address: restaurant.address, source: restaurant.source || "local", selectedAt: new Date().toISOString() }; const next = [record, ...history.filter((item) => item.date !== today)].sort((a, b) => b.date.localeCompare(a.date)); setHistory(next); window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); }
   function clearHistory() { if (!window.confirm("确定清空这台设备上的午餐记录吗？")) return; window.localStorage.removeItem(STORAGE_KEY); setHistory([]); }
   return (
-    <div className="min-h-screen bg-[#f7f5ef] text-[#183d31]"><AppHeader step={step} onHome={goHome} />{!storageReady ? <main className="grid min-h-[70vh] place-items-center text-sm font-bold text-[#71847d]">正在准备你的午餐转盘…</main> : step === "home" ? <HomePage history={history} onStart={start} onClearHistory={clearHistory} /> : step === "discover" ? <DiscoverPage location={location} onLocationChange={setLocation} searchResults={searchResults} onSearchResultsChange={setSearchResults} distanceMinutes={distanceMinutes} onDistanceChange={setDistanceMinutes} budget={budget} onBudgetChange={setBudget} searchCache={searchCache} onContinue={continueToSelection} /> : step === "select" ? <SelectionPage restaurants={selectionRestaurants} history={history} manualExcluded={manualExcluded} onToggle={toggleRestaurant} onReset={() => setManualExcluded([])} onBack={() => setStep("discover")} onContinue={continueToWheel} /> : <WheelPage candidates={wheelCandidates} location={location} onBack={() => setStep("select")} onSave={saveLunch} onHome={goHome} />}</div>
+    <div className="min-h-screen bg-[#f7f5ef] text-[#183d31]"><AppHeader step={step} onHome={goHome} />{!storageReady ? <main className="grid min-h-[70vh] place-items-center text-sm font-bold text-[#71847d]">正在准备你的午餐转盘…</main> : step === "home" ? <HomePage history={history} onStart={start} onClearHistory={clearHistory} /> : step === "discover" ? <DiscoverPage location={location} locationStatus={locationStatus} locationError={locationError} locationErrorCode={locationErrorCode} locationRevision={locationRevision} onLocate={locate} searchResults={searchResults} onSearchResultsChange={setSearchResults} distanceMinutes={distanceMinutes} onDistanceChange={setDistanceMinutes} budget={budget} onBudgetChange={setBudget} searchCache={searchCache} onContinue={continueToSelection} /> : step === "select" ? <SelectionPage restaurants={selectionRestaurants} history={history} manualExcluded={manualExcluded} onToggle={toggleRestaurant} onReset={() => setManualExcluded([])} onBack={() => setStep("discover")} onContinue={continueToWheel} /> : <WheelPage candidates={wheelCandidates} location={location} onBack={() => setStep("select")} onSave={saveLunch} onHome={goHome} />}</div>
   );
 }
