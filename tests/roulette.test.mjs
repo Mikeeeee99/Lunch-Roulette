@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCandidatePool, formatDateKey, getRecentRestaurantIds, pickDifferentMessage, pickRandomRestaurant } from "../lib/roulette.js";
+import { buildCandidatePool, formatDateKey, getRecentRestaurantIds, getWheelLabel, pickDifferentMessage, pickRandomRestaurant, sampleCandidates } from "../lib/roulette.js";
 
 const restaurants = [
   { id: "a", enabled: true },
@@ -38,4 +38,16 @@ test("result message does not immediately repeat when alternatives exist", () =>
   assert.notEqual(pickDifferentMessage(messages, "第一条", () => 0), "第一条");
   assert.equal(pickDifferentMessage(["唯一一条"], "唯一一条", () => 0.5), "唯一一条");
   assert.equal(pickDifferentMessage([], "", () => 0.5), "");
+});
+
+test("candidate sampling returns an empty result for an invalid limit", () => {
+  assert.deepEqual(sampleCandidates(restaurants, 0), []);
+});
+
+test("builds recognizable short labels for dense wheel sectors", () => {
+  assert.equal(getWheelLabel("老乡鸡(上海徐汇万科中心店)", 5), "老乡鸡");
+  assert.equal(getWheelLabel("喜家德虾仁水饺(徐汇万科中心一期店)", 5), "喜家德水饺");
+  assert.equal(getWheelLabel("晨曦炖品·鲍鱼饭(漕宝路店)", 5), "晨曦炖品");
+  assert.equal(getWheelLabel("百热客兰州牛肉面(东泉路店)", 5), "百热牛肉面");
+  assert.equal(getWheelLabel("", 5), "餐厅");
 });

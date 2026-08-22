@@ -2,7 +2,7 @@ import "./globals.css";
 import { headers } from "next/headers";
 
 const title = "Lunch Roulette AI｜今天中午吃什么？";
-const description = "排除不想吃的，避开最近吃过的，用午餐转盘快速决定今天吃什么。";
+const description = "定位上海附近真实餐厅，按步行范围和预算筛选，再用午餐转盘快速决定今天吃什么。";
 
 export async function generateMetadata() {
   const requestHeaders = await headers();
