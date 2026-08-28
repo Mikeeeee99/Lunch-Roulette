@@ -16,6 +16,7 @@ import {
   filterByBudget,
   formatCost,
   formatDistance,
+  formatLocationRegion,
   isLunchRestaurantPoi,
   radiusForMinutes,
 } from "../lib/discovery.js";
@@ -57,7 +58,7 @@ function AppHeader({ step, onHome }) {
   return (
     <header className="relative z-30 mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5 sm:px-8">
       <button type="button" onClick={onHome} className="text-left" aria-label="返回首页"><Brand /></button>
-      {step === "home" ? <span className="hidden rounded-full border border-[#183d31]/10 bg-white/70 px-4 py-2 text-xs font-bold text-[#557068] sm:block">上海办公室午餐决策器</span> : <div className="flex items-center gap-2" aria-label="当前步骤">{steps.map((item, index) => <span key={item} className={`h-2.5 rounded-full transition-all ${step === item ? "w-8 bg-[#ff6b35]" : index < currentIndex ? "w-2.5 bg-[#70c1a2]" : "w-2.5 bg-[#d9ddd8]"}`} />)}</div>}
+      {step === "home" ? <span className="hidden rounded-full border border-[#183d31]/10 bg-white/70 px-4 py-2 text-xs font-bold text-[#557068] sm:block">全国办公室午餐决策器</span> : <div className="flex items-center gap-2" aria-label="当前步骤">{steps.map((item, index) => <span key={item} className={`h-2.5 rounded-full transition-all ${step === item ? "w-8 bg-[#ff6b35]" : index < currentIndex ? "w-2.5 bg-[#70c1a2]" : "w-2.5 bg-[#d9ddd8]"}`} />)}</div>}
     </header>
   );
 }
@@ -68,7 +69,7 @@ function DecorativeWheel() {
       <div className="absolute inset-2 rounded-full bg-[#183d31] shadow-[0_22px_60px_rgba(24,61,49,.2)]" />
       <div className="absolute inset-7 grid place-items-center rounded-full border-[14px] border-[#fffaf1] bg-[conic-gradient(#ff6b35_0deg_60deg,#ffd166_60deg_120deg,#70c1a2_120deg_180deg,#f78da7_180deg_240deg,#7f9cf5_240deg_300deg,#f3a952_300deg_360deg)]"><div className="grid size-28 place-items-center rounded-full border-8 border-[#fffaf1] bg-[#183d31] text-center text-sm font-black leading-5 text-white shadow-xl">附近<br />午餐</div></div>
       <div className="absolute left-1/2 top-0 -translate-x-1/2 text-5xl drop-shadow-md">▼</div>
-      <div className="absolute -right-1 top-14 rotate-6 rounded-2xl bg-white px-4 py-3 text-sm font-black shadow-lg sm:-right-4">📍 上海附近餐厅</div>
+      <div className="absolute -right-1 top-14 rotate-6 rounded-2xl bg-white px-4 py-3 text-sm font-black shadow-lg sm:-right-4">📍 全国附近餐厅</div>
       <div className="absolute -bottom-1 -left-1 -rotate-3 rounded-2xl bg-white px-4 py-3 text-sm font-black shadow-lg sm:-left-4">🎯 最多 30 家</div>
     </div>
   );
@@ -84,7 +85,7 @@ function HomePage({ history, onStart, onClearHistory }) {
         <div className="relative z-10">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-[#ffe2d7] px-4 py-2 text-sm font-bold text-[#b43f18]"><span>✦</span> V2 · 发现附近真实餐厅</div>
           <h1 className="max-w-2xl text-5xl font-black leading-[1.08] tracking-[-0.04em] sm:text-6xl lg:text-7xl">今天中午，<span className="text-[#ff6b35]">吃什么？</span></h1>
-          <p className="mt-6 max-w-xl text-lg leading-8 text-[#557068]">定位上海附近餐厅，按步行范围和预算筛选。剩下的交给转盘，几秒钟结束午餐纠结。</p>
+          <p className="mt-6 max-w-xl text-lg leading-8 text-[#557068]">定位中国大陆附近餐厅，按步行范围和预算筛选。剩下的交给转盘，几秒钟结束午餐纠结。</p>
           {todayRecord && <div className="mt-7 flex max-w-lg items-center gap-4 rounded-2xl border border-[#70c1a2]/30 bg-[#e9f7f0] p-4"><span className="text-3xl">{todayRecord.emoji || "🍽️"}</span><div className="min-w-0 flex-1"><p className="text-xs font-bold text-[#5a776e]">今天已经选过</p><p className="truncate font-black">{todayRecord.restaurantName}</p></div><span className="text-xl">✓</span></div>}
           <button type="button" onClick={onStart} className="mt-9 rounded-2xl bg-[#183d31] px-8 py-4 text-base font-black text-white shadow-[0_7px_0_#0c251e] transition hover:-translate-y-0.5 active:translate-y-1 active:shadow-[0_3px_0_#0c251e]">{todayRecord ? "再选一次" : "寻找附近午餐"} <span className="ml-2">→</span></button>
           <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm font-semibold text-[#6e827b]"><span>✓ 两天不重复</span><span>✓ 最多 30 家</span><span>✓ 本地保存</span></div>
@@ -111,7 +112,7 @@ function DiscoverPage({ location, locationStatus, locationError, locationErrorCo
     const requestId = activeRequestRef.current + 1;
     activeRequestRef.current = requestId;
     const controller = new AbortController();
-    const cacheKey = `${location.longitude.toFixed(4)}:${location.latitude.toFixed(4)}:${radius}`;
+    const cacheKey = `${location.adcode}:${location.longitude.toFixed(4)}:${location.latitude.toFixed(4)}:${radius}`;
     const cached = searchCache.current.get(cacheKey);
     setSearchError("");
     if (cached) {
@@ -125,7 +126,7 @@ function DiscoverPage({ location, locationStatus, locationError, locationErrorCo
     fetch("/api/nearby-restaurants", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ longitude: location.longitude, latitude: location.latitude, radius, coordinateSystem: "gcj02" }),
+      body: JSON.stringify({ longitude: location.longitude, latitude: location.latitude, radius, coordinateSystem: "gcj02", adcode: location.adcode, cityCode: location.cityCode }),
       signal: controller.signal,
     }).then(async (response) => {
       const payload = await response.json().catch(() => ({}));
@@ -143,14 +144,14 @@ function DiscoverPage({ location, locationStatus, locationError, locationErrorCo
     });
 
     return () => controller.abort();
-  }, [location?.latitude, location?.longitude, location?.supported, locationRevision, locationStatus, onSearchResultsChange, radius, retryToken, searchCache]);
+  }, [location?.adcode, location?.cityCode, location?.latitude, location?.longitude, location?.supported, locationRevision, locationStatus, onSearchResultsChange, radius, retryToken, searchCache]);
 
   const locationLabel = locationStatus === "loading"
     ? "正在请求定位权限…"
     : locationStatus === "error" || locationStatus === "unsupported"
       ? "暂时无法确认当前位置"
       : location
-        ? [location.supported ? "上海" : location.province || location.city || "当前位置", location.district, location.road && `${location.road}附近`].filter(Boolean).join(" · ")
+        ? [formatLocationRegion(location), location.district, location.road && `${location.road}附近`].filter(Boolean).join(" · ")
         : "等待获取你的位置";
   const canContinue = locationStatus === "ready" && searchStatus === "ready" && filteredRestaurants.length > 0;
   const primaryDisabled = locationStatus !== "ready" || !location?.supported || searchStatus === "idle" || searchStatus === "loading" || (searchStatus === "ready" && filteredRestaurants.length === 0);
@@ -315,7 +316,7 @@ export default function Home() {
       if (resolved.supported) {
         setLocationStatus("ready");
       } else {
-        setLocationStatus("unsupported"); setLocationErrorCode("outside-shanghai"); setLocationError("V2 暂仅支持上海地区，当前位置还不能搜索餐厅。");
+        setLocationStatus("unsupported"); setLocationErrorCode("outside-mainland-china"); setLocationError("目前仅支持中国大陆地区，当前位置还不能搜索餐厅。");
       }
     } catch (error) {
       if (!locationRequestRef.current.isCurrent(requestId)) return;

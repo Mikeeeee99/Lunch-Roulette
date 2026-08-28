@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   filterByBudget,
+  formatLocationRegion,
   isLunchRestaurantPoi,
-  isShanghaiAdcode,
-  isShanghaiCoordinate,
+  isMainlandChinaAdcode,
+  isMainlandChinaCoordinate,
+  isValidAmapCityCode,
   normalizeAmapPois,
   normalizeCost,
   radiusForMinutes,
@@ -32,11 +34,26 @@ test("applies strict budgets and keeps unknown costs only for unlimited", () => 
   assert.deepEqual(filterByBudget(restaurants, null).map((item) => item.id), ["a", "b", "c"]);
 });
 
-test("recognizes Shanghai coordinates and adcodes", () => {
-  assert.equal(isShanghaiCoordinate(121.4737, 31.2304), true);
-  assert.equal(isShanghaiCoordinate(116.4074, 39.9042), false);
-  assert.equal(isShanghaiAdcode("310104"), true);
-  assert.equal(isShanghaiAdcode("110105"), false);
+test("recognizes mainland China coordinates, adcodes, and city codes", () => {
+  assert.equal(isMainlandChinaCoordinate(121.4737, 31.2304), true);
+  assert.equal(isMainlandChinaCoordinate(120.1551, 30.2741), true);
+  assert.equal(isMainlandChinaCoordinate(116.4074, 39.9042), true);
+  assert.equal(isMainlandChinaCoordinate(104.0665, 30.5723), true);
+  assert.equal(isMainlandChinaCoordinate(139.6917, 35.6895), false);
+  assert.equal(isMainlandChinaAdcode("310104"), true);
+  assert.equal(isMainlandChinaAdcode("330106"), true);
+  assert.equal(isMainlandChinaAdcode("110105"), true);
+  assert.equal(isMainlandChinaAdcode("810000"), false);
+  assert.equal(isMainlandChinaAdcode("820000"), false);
+  assert.equal(isValidAmapCityCode("021"), true);
+  assert.equal(isValidAmapCityCode("0571"), true);
+  assert.equal(isValidAmapCityCode("city"), false);
+});
+
+test("formats municipality and ordinary city location labels", () => {
+  assert.equal(formatLocationRegion({ province: "上海市", city: "" }), "上海市");
+  assert.equal(formatLocationRegion({ province: "浙江省", city: "杭州市" }), "浙江省 · 杭州市");
+  assert.equal(formatLocationRegion({}), "当前位置");
 });
 
 test("keeps lunch restaurants and excludes beverage, dessert, and bakery POIs", () => {
@@ -67,6 +84,7 @@ test("filters non-meal POIs before normalization and deduplication", () => {
   const base = {
     location: "121.4737,31.2304",
     adcode: "310104",
+    citycode: "021",
     distance: "300",
     biz_ext: { cost: "35" },
   };
@@ -85,6 +103,7 @@ test("normalizes, filters, and deduplicates Amap POIs", () => {
     name: "测试面馆",
     location: "121.4737,31.2304",
     adcode: "310104",
+    citycode: "021",
     type: "餐饮服务;中餐厅;面馆",
     distance: "360",
     address: "测试路 1 号",
@@ -94,12 +113,26 @@ test("normalizes, filters, and deduplicates Amap POIs", () => {
     valid,
     valid,
     { ...valid, id: "" },
-    { ...valid, id: "B002", adcode: "110105", location: "116.4074,39.9042" },
-  ]);
+    { ...valid, id: "B002", adcode: "110105", citycode: "010", location: "116.4074,39.9042" },
+  ], "021");
   assert.equal(results.length, 1);
   assert.equal(results[0].cost, 32);
   assert.equal(results[0].source, "amap");
   assert.equal("rating" in results[0], false);
+});
+
+test("normalizes restaurants in Hangzhou and other mainland cities", () => {
+  const hangzhou = normalizeAmapPois([{
+    id: "HZ001",
+    name: "杭州测试面馆",
+    location: "120.1551,30.2741",
+    adcode: "330106",
+    citycode: "0571",
+    type: "餐饮服务;中餐厅;面馆",
+    distance: "280",
+    biz_ext: { cost: "30" },
+  }], "0571");
+  assert.deepEqual(hangzhou.map((item) => item.id), ["HZ001"]);
 });
 
 test("keeps all candidates up to 30 and samples 30 unique candidates above the limit", () => {

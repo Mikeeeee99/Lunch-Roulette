@@ -19,6 +19,6 @@ test("server renders the Lunch Roulette application shell", async () => {
   assert.match(html, /Lunch Roulette AI/);
   assert.match(html, /今天中午吃什么/);
   assert.match(html, /附近真实餐厅/);
-  assert.match(html, /上海办公室午餐决策器/);
+  assert.match(html, /全国办公室午餐决策器/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/);
 });
